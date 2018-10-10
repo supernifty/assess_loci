@@ -35,13 +35,13 @@ def populate_intervals(panels, vdx, vcf, name, group, pass_only, loci):
           found[pdx] += 1
           for interval in panel[chr][variant.POS]:
             logging.debug(interval)
-            interval[2].append(vdx)
+            interval[2][0].append(vdx)
             loci[pdx].add((chr, interval))
 
   logging.info('processing %s: considered %i filtered %i found %s', vcf, considered, filtered, ' '.join([str(x) for x in found]))
 
 def main(vcfs, names, groups, panels, pass_only):
-  logging.info('starting...')
+  logging.info('starting with %i vcfs and %i groups: %i in group 0 and %i group 1...', len(vcfs), len(groups), len([x for x in groups if x == 0]), len([x for x in groups if x == 1]))
 
   # build interval trees
   panel_intervals = []
@@ -55,13 +55,17 @@ def main(vcfs, names, groups, panels, pass_only):
         logging.warn('skipped line %i in %s', idx + 1, bed)
         continue
       chr, start, finish = fields[:3]
+      if len(fields) > 3:
+        annot = fields[3]
+      else:
+        annot = ''
       if REMOVE_CHR and chr.startswith('chr'):
         chr = chr[3:]
       if chr not in intervals:
         intervals[chr] = intervaltree.IntervalTree()
       if len(intervals[chr][int(start):int(finish)]) > 0:
         pass #logging.debug('overlap at %s %s %s', chr, start, finish)
-      intervals[chr][int(start):int(finish)] = []
+      intervals[chr][int(start):int(finish)] = ([], annot) # list of matching samples
       total += int(finish) - int(start)
       if (idx + 1) % 100000 == 0:
         logging.debug('%i lines...', idx + 1)
@@ -78,13 +82,13 @@ def main(vcfs, names, groups, panels, pass_only):
     populate_intervals(panel_intervals, vdx, vcf, name, group, pass_only, loci)
 
   # accuracy of each locus
-  sys.stdout.write('Panel\tChr\tStart\tEnd\tTP\tTN\tFP\tFN\tSpecificity\tSensitivity\tAccuracy\n')
-  for pdx, panel in enumerate(panels):
+  sys.stdout.write('Panel\tChr\tStart\tEnd\tAnnot\tTP\tTN\tFP\tFN\tSpecificity\tSensitivity\tAccuracy\n')
+  for pdx, panel in enumerate(panels): # each panel
     for locus in loci[pdx]:
       # how informative is this locus?
       tp = tn = fp = fn = 0
       for idx, group in enumerate(groups):
-        if idx in locus[1][2]: # found in interval
+        if idx in locus[1][2][0]: # found in interval
           if group == 0: # no good
             fp += 1
           else: # good
@@ -97,11 +101,12 @@ def main(vcfs, names, groups, panels, pass_only):
       sensitivity = tp / (tp + fn)
       specificity = tn / (tn + fp)
       accuracy = (tp + tn) / (tp + tn + fp + fn)
-      sys.stdout.write('{panel}\t{chr}\t{start}\t{end}\t{tp}\t{tn}\t{fp}\t{fn}\t{specificity:.2f}\t{sensitivity:.2f}\t{accuracy:.2f}\n'.format(
+      sys.stdout.write('{panel}\t{chr}\t{start}\t{end}\t{annot}\t{tp}\t{tn}\t{fp}\t{fn}\t{specificity:.2f}\t{sensitivity:.2f}\t{accuracy:.2f}\n'.format(
         panel=panel,
         chr=locus[0],
         start=locus[1][0],
         end=locus[1][1],
+        annot=locus[1][2][1],
         tp=tp,
         tn=tn,
         fp=fp,
@@ -110,7 +115,6 @@ def main(vcfs, names, groups, panels, pass_only):
         specificity=specificity,
         accuracy=accuracy
       ))
-      
 
   logging.info('done')
 
